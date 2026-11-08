@@ -1,0 +1,610 @@
+---
+name: arch-doc
+description: Write a code-verified architecture doc or module walkthrough as one self-contained HTML page in the 1DD house style — reality-check callout, lanes overview with arrows and hover-trace, call chains with File:line anchors, where-to-breakpoint tables, gotchas, mermaid state machines, docs-vs-code drift. Use for "architecture doc", "module walkthrough", "code tour", "how does X work end to end".
+argument-hint: "[module, flow or question] [output path]"
+---
+
+# Architecture Doc
+
+Subject for this run: **$ARGUMENTS** (output to `docs/architecture/<slug>.html` unless a path is given).
+
+## Outcome
+
+One HTML page a developer can read top to bottom and then debug from. Every box is a real class or table, every claim carries a `File:line` anchor as of a stated date and branch, and anything the docs get wrong is called out before the reader trusts them. It looks and behaves like the other 1DD pages (Event Map, Grid Flow): IBM Plex, the same colour tokens, light and dark, hover-to-trace diagrams.
+
+## Pick the right picture
+
+A diagram earns its place only if it shows something the prose can't. Pick by the shape of the mechanism:
+
+| The thing you're explaining | Use | How |
+|---|---|---|
+| Who publishes / who consumes across modules | **Event map** | the `event-map` skill (separate page; link to it) |
+| A flow over time: startup, per-request, nightly job, morning, consumers | **Lanes** | `LANES` + `LINKS` data in this template |
+| An entity's lifecycle / status column | **State machine** | `<pre class="mermaid">stateDiagram-v2` |
+| One request crossing services, with replies | **Sequence** | `<pre class="mermaid">sequenceDiagram` |
+| Tables and keys | **ER** | `<pre class="mermaid">erDiagram` |
+| Per-item facts (fields, configs, endpoints) | **Table** | `.tbl` table — not a diagram |
+
+Use at most one diagram per section. If a table says it, don't draw it.
+
+## Page anatomy (in this order)
+
+1. **Header** — eyebrow (where this page sits, e.g. "Rung 04 · Code Reading Map"), `h1` that states the subject and the reader ("Grid (M3) — the whole flow, for a debugger"), one-paragraph `.sub` with the provenance promise ("every anchor is `File:line` as of DATE on BRANCH"), computed stat chips, theme button.
+2. **TOC chips** — one per `h2`.
+3. **Reality check** (`.callout.warn`) — 2–5 numbered things that the design docs, README or `CLAUDE.md` say and the code contradicts, each with its anchor. Always first: the reader must not trust a doc before reading this.
+4. **Overview** — one lanes diagram (top to bottom = order things happen), legend, detail panel.
+5. **One `h2` per stage**, numbered (`1 · Seeding`, `2 · Serviceability` …), each with:
+   - `.stage` — a **business** badge and one paragraph: what this stage is for, in product terms.
+   - **code** badge `h3` + call-chain table: `# | Method | Anchor | What it does`.
+   - **debug** badge `h3` + where-to-look table: `Symptom | Breakpoint | Inspect` (or `| Test`).
+   - **gotchas** callout (`.callout.bad`) — traps that cost someone an afternoon.
+6. **State machines / sequences** where a lifecycle exists (mermaid).
+7. **Docs vs code** — `Claim | Where it's claimed | What the code does | Proof`.
+8. **Terms** — `Term | What it is | On this page` (the last column ties every term to something visible).
+9. **Footer** — "Verified DATE against BRANCH", and what was swept.
+
+Small pages may drop 6–8; never drop 3 or 9.
+
+## Procedure
+
+1. Read `CLAUDE.md`, `AGENTS.md`, `README` and any design docs for the subject. Write down every claim they make about it — these become reality-check and drift candidates.
+2. Find the entry points (controllers, `@Scheduled` jobs, `ApplicationRunner`s, listeners, ports) with `rg`, then follow each call **ctrl-click style**: from the entry point into each callee only as deep as needed to understand it. A method already explained earlier on the page is linked back (`see §2`), never re-explained.
+3. Record every hop as `Class.method → file:line` in a scratch ledger. Open the line; do not infer anchors from names.
+4. Check what actually runs: which bean is injected (`@Qualifier`, `@Primary`, `@ConditionalOn…`), which schedule fires, which branch is dead. Things that exist but are never called become `ghost` boxes and a drift row.
+5. Copy the template: `cp .agents/skills/arch-doc/templates/arch-doc.html <output>` if it exists; otherwise write the template at the end of this skill **verbatim**.
+6. Fill `LANES`, `LINKS` and `STATS` in the data block. Rules:
+   - One lane per phase or trigger, in time order. Lane `title` in caps with a circled number (`① STARTUP`, `② EVERY BOOKING`, `③ NIGHTLY 01:00 IST`), `sub` names the trigger.
+   - Box `t` = class or method, `s` = anchor or one fact (mono). Keep `t` ≤ ~36 chars; if a lane has more than 5 boxes, split it into two lanes (`③ NIGHTLY · orchestrate`, `③ NIGHTLY · compute`).
+   - `in` = label on the arrow into the box (the argument, the call, the condition). `link:false` starts a new chain in the same lane.
+   - `kind`: `hot` on the **one** box per lane where the first breakpoint goes; `table` for DB tables; `ghost` for code that exists but never runs; `bad` for broken.
+   - `LINKS` connect lanes (data written in one lane, read in another). They route as elbows through the gap between lanes; several links from one box form a bus.
+   - Add `note` to any box whose story doesn't fit in `s`; it shows in the detail panel.
+7. Write the stage sections, drift table and terms by editing the HTML between the marked comments. Reuse the component snippets below; do not invent new classes.
+8. Verify in the browser: serve the folder (`python3 -m http.server 8765`), check the console is clean (the renderer logs `LINK references unknown box`), hover a box in every lane, cycle the theme button (mermaid re-renders), resize to 390 px.
+9. Deliver: commit, open a PR titled `docs: <subject> walkthrough`, attach a full-page screenshot, and summarise the reality-check items in chat.
+
+## Specifications
+
+- Single self-contained `.html`; external requests limited to Google Fonts and (only if a mermaid block exists) `cdn.jsdelivr.net/npm/mermaid@11`.
+- Console clean. No horizontal page scroll at 390 px; diagrams scroll inside their card.
+- Every class/method in a table or box has an anchor that was opened during this run. Date and branch appear in `.sub` and the footer.
+- Reality-check callout is the first thing after the TOC.
+- Exactly one `hot` box per lane that has a meaningful breakpoint.
+- Light and dark both legible; mermaid follows the theme.
+
+## Advice
+
+- **Write for the person with the debugger open.** Every stage answers: what is it for, what runs in what order, where do I break, what will fool me.
+- **Claims come with proof.** "The solver that runs is `BalancedBfsAssignmentServiceImpl`, not CP-SAT — the one injection point is `GridReplanServiceImpl:59`." Not "the system uses a BFS-style solver".
+- **Lead with what's surprising.** Dead code paths, unwired beans, tables nobody creates, flags that default on — these are the paragraphs people come back for.
+- **Prose is short and declarative**, present tense, no hedging, no marketing. Max ~82 characters per line (already set by CSS).
+- Badges are a fixed vocabulary: `biz` (green, why it exists), `code` (blue, how it runs), `dbg` (amber, where to look), `gotcha` (red, traps). Don't add colours.
+- Numbers in stat chips must be countable from the page or the ledger.
+
+### Components (copy, don't invent)
+
+```html
+<!-- callouts: .warn = reality check, .bad = gotchas, .ok = "this part is solid" -->
+<div class="callout warn"><strong>Reality check before you read any design doc.</strong><ol><li>…</li></ol></div>
+<div class="callout bad"><strong><span class="badge gotcha">gotchas</span></strong><ul><li>…</li></ul></div>
+
+<!-- stage intro -->
+<p class="stage"><span class="badge biz">business</span>What this stage is for, in product terms.</p>
+
+<!-- section sub-heads -->
+<h3><span class="badge code">code</span> Call chain from the booking</h3>
+<h3><span class="badge dbg">debug</span> Where to look</h3>
+
+<!-- call-chain table (ctrl-click order) -->
+<div class="tbl"><table>
+  <thead><tr><th>#</th><th>Method</th><th>Anchor</th><th>What it does</th></tr></thead>
+  <tbody><tr><td class="n">1</td><td><code>Class.method</code></td><td class="anchor"><code>File:123</code></td><td>…</td></tr></tbody>
+</table></div>
+
+<!-- verdict colours inside tables -->
+<span class="b">broken</span> <span class="w">drifted</span> <span class="g">verified</span>
+
+<!-- mermaid (themed automatically) -->
+<div class="mwrap"><pre class="mermaid">
+stateDiagram-v2
+  direction LR
+  [*] --> PROPOSED: nightly replan
+  PROPOSED --> APPROVED: POST /approve
+</pre></div>
+```
+
+### House style tokens (shared with the event map)
+
+```css
+:root{ --bg:#f5f7fa; --fg:#1b2129; --muted:#5e6975; --line:#d9dfe7; --card:#fff; --chip:#eef2f6;
+       --accent:#2c5f93; --ok:#3b7a57; --warn:#9c6b1c; --bad:#a7463b; --edge:#8a95a3; }
+/* dark */ { --bg:#14181d; --fg:#e7ebf0; --muted:#98a2ae; --line:#2a313a; --card:#1a1f26; --chip:#20262e;
+       --accent:#82b4e6; --ok:#7cc79b; --warn:#d9a95a; --bad:#e3907f; --edge:#6b7684; }
+fonts: IBM Plex Sans 400/500/600 (UI) + IBM Plex Mono 400/500 (code, anchors, edge labels)
+```
+Dark mode is declared twice — under `@media (prefers-color-scheme:dark){:root:not([data-theme="light"])}` and under `:root[data-theme="dark"]` — so both the OS setting and the theme button work.
+
+## Forbidden actions
+
+- Do not change CSS tokens, fonts or class names; do not add frameworks or other CDNs.
+- Do not hand-place SVG coordinates for lanes — use the `LANES` data; the renderer measures text and routes arrows.
+- Do not write an anchor you did not open, and do not round a doc's claim into a fact.
+- Do not re-explain a method already explained earlier on the page; link back to it.
+- Do not split the page into multiple files.
+
+## Template — `arch-doc.html`
+
+Copy this verbatim, then replace the sample content (the 1DD Grid flow, 2026-10-25) with yours.
+
+````html
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<!-- EDIT: 2–4 word name -->
+<title>1DD Grid Flow</title>
+<meta name="description" content="Code-verified walkthrough of one module: lanes overview, call chains with File:line anchors, where to put breakpoints, gotchas, and docs-vs-code drift.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* ═══════════════ ARCH DOC — same tokens as the Event Map so every page reads as one system ═══════════════ */
+:root{
+  --bg:#f5f7fa; --fg:#1b2129; --muted:#5e6975; --line:#d9dfe7; --card:#ffffff; --chip:#eef2f6; --lane:#eef2f6;
+  --accent:#2c5f93; --ok:#3b7a57; --warn:#9c6b1c; --bad:#a7463b; --edge:#8a95a3;
+  --okbg:#e8f3ec; --warnbg:#fbf3e4; --badbg:#f9e9e6; --code:#eef1f5;
+  --font-ui:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#14181d; --fg:#e7ebf0; --muted:#98a2ae; --line:#2a313a; --card:#1a1f26; --chip:#20262e; --lane:#181d23;
+  --accent:#82b4e6; --ok:#7cc79b; --warn:#d9a95a; --bad:#e3907f; --edge:#6b7684;
+  --okbg:#16261d; --warnbg:#2a2214; --badbg:#2d1b18; --code:#20262e; color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#14181d; --fg:#e7ebf0; --muted:#98a2ae; --line:#2a313a; --card:#1a1f26; --chip:#20262e; --lane:#181d23;
+  --accent:#82b4e6; --ok:#7cc79b; --warn:#d9a95a; --bad:#e3907f; --edge:#6b7684;
+  --okbg:#16261d; --warnbg:#2a2214; --badbg:#2d1b18; --code:#20262e; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+html{scroll-behavior:smooth; scroll-padding-top:16px}
+body{background:var(--bg); color:var(--fg); font:15.5px/1.65 var(--font-ui); -webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px; margin:0 auto; padding-left:max(16px,env(safe-area-inset-left,0px)); padding-right:max(16px,env(safe-area-inset-right,0px)); padding-block:30px 96px}
+
+/* ── header ── */
+.top{display:flex; justify-content:space-between; align-items:flex-start; gap:12px 24px; flex-wrap:wrap}
+.eyebrow{font:600 11px var(--font-ui); letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:0 0 6px}
+h1{font-size:30px; line-height:1.2; font-weight:600; letter-spacing:-.015em; margin:0 0 8px; text-wrap:balance}
+.sub{color:var(--muted); font-size:16px; margin:0 0 18px; max-width:78ch}
+.theme{font:500 12px var(--font-ui); color:var(--muted); background:var(--card); border:1px solid var(--line); border-radius:8px; padding:6px 10px; cursor:pointer; white-space:nowrap}
+.theme:hover{color:var(--fg); border-color:var(--accent)}
+.stats{display:flex; flex-wrap:wrap; gap:8px; margin:0 0 6px}
+.stat{background:var(--chip); border:1px solid var(--line); border-radius:8px; padding:6px 10px; font-size:12.5px; color:var(--muted); font-variant-numeric:tabular-nums}
+.stat b{color:var(--fg); font-weight:600} .stat.bad b{color:var(--bad)}
+
+/* ── text ── */
+h2{font-size:22px; line-height:1.3; font-weight:600; margin:64px 0 14px; padding-top:22px; border-top:1px solid var(--line); text-wrap:balance}
+h3{font-size:16.5px; line-height:1.4; font-weight:600; margin:30px 0 10px; display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+p{margin:12px 0; max-width:82ch}
+a{color:var(--accent)}
+code{font:13.5px/1.5 var(--font-mono); background:var(--code); padding:1px 6px; border-radius:5px; overflow-wrap:anywhere}
+pre{font:13.5px/1.6 var(--font-mono); background:var(--code); padding:14px 16px; border-radius:10px; overflow-x:auto; margin:12px 0}
+pre code{background:none; padding:0; white-space:pre}
+ul,ol{padding-left:24px; margin:10px 0}
+li{margin:6px 0}
+li::marker{color:var(--muted)}
+.dim{color:var(--muted)}
+
+/* ── toc chips ── */
+.toc{display:flex; flex-wrap:wrap; gap:8px 10px; margin:6px 0 0; padding:0; list-style:none; font-size:13.5px}
+.toc li{margin:0}
+.toc a{text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:5px 13px; color:var(--fg); background:var(--card); display:inline-block}
+.toc a:hover{border-color:var(--accent); color:var(--accent)}
+
+/* ── callouts & badges ── */
+.callout{border-left:4px solid var(--accent); background:var(--card); padding:16px 20px; border-radius:0 12px 12px 0; margin:20px 0; max-width:none}
+.callout > strong:first-child{display:block; font-size:16px; margin-bottom:4px}
+.callout ol,.callout ul{margin-bottom:0}
+.callout.warn{border-color:var(--warn); background:var(--warnbg)}
+.callout.bad{border-color:var(--bad); background:var(--badbg)}
+.callout.ok{border-color:var(--ok); background:var(--okbg)}
+.badge{display:inline-block; font:600 11px var(--font-ui); letter-spacing:.08em; text-transform:uppercase; padding:2px 9px; border-radius:999px; border:1px solid var(--line); color:var(--muted); white-space:nowrap; vertical-align:middle}
+.badge.biz{color:var(--ok); border-color:var(--ok)}
+.badge.code{color:var(--accent); border-color:var(--accent)}
+.badge.dbg{color:var(--warn); border-color:var(--warn)}
+.badge.gotcha{color:var(--bad); border-color:var(--bad)}
+.stage{margin:12px 0 18px; max-width:82ch}
+.stage > .badge{display:block; width:max-content; margin:0 0 8px}
+
+/* ── tables ── */
+.tbl{overflow-x:auto; -webkit-overflow-scrolling:touch; margin:14px 0 22px; border:1px solid var(--line); border-radius:12px; background:var(--card)}
+table{border-collapse:collapse; width:100%; font-size:14px; line-height:1.55; min-width:640px}
+th,td{border-bottom:1px solid var(--line); padding:9px 12px; text-align:left; vertical-align:top}
+th{font-size:11.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); font-weight:600; background:var(--chip)}
+tr:last-child td{border-bottom:none}
+td code{font-size:12.5px}
+td.n{font-variant-numeric:tabular-nums; color:var(--muted); white-space:nowrap; width:1%}
+td.anchor{white-space:nowrap}
+.b{color:var(--bad); font-weight:600} .w{color:var(--warn); font-weight:600} .g{color:var(--ok); font-weight:600}
+
+/* ── lanes diagram (rendered from LANES data) ── */
+figure{margin:18px 0 8px}
+.dwrap{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:8px; overflow-x:auto; -webkit-overflow-scrolling:touch}
+svg.lanes{display:block; width:100%; height:auto; font-family:var(--font-ui)}
+figcaption{color:var(--muted); font-size:13px; margin:10px 2px 0; display:flex; flex-wrap:wrap; gap:6px 18px; align-items:center}
+.key{display:inline-flex; align-items:center; gap:6px; white-space:nowrap}
+.key i{display:inline-block; width:18px; height:12px; border:1.3px solid var(--edge); border-radius:3px; background:var(--card)}
+.key i.tbl{border-style:dashed} .key i.hot{border:2px solid var(--accent)} .key i.ghost{border-style:dotted; background:var(--lane)} .key i.bad{border-color:var(--bad)}
+.lanebg{fill:var(--lane)}
+.lt{font:600 10.5px var(--font-ui); letter-spacing:.1em; fill:var(--muted)}
+.ls{font:11px var(--font-ui); fill:var(--muted)}
+.bx{cursor:pointer; outline:none}
+.bx rect{fill:var(--card); stroke:var(--edge); stroke-width:1.2}
+.bx.table rect{stroke-dasharray:5 3}
+.bx.hot rect{stroke:var(--accent); stroke-width:2.2}
+.bx.ghost rect{fill:var(--lane); stroke:var(--muted); stroke-dasharray:2 3}
+.bx.bad rect{stroke:var(--bad); stroke-width:1.6}
+.bx .t{font:600 12.5px var(--font-ui); fill:var(--fg)}
+.bx .s{font:11px var(--font-mono); fill:var(--muted)}
+.bx.ghost .t{fill:var(--muted)} .bx.bad .t{fill:var(--bad)}
+.bx:focus-visible rect{stroke:var(--accent); stroke-width:2.5}
+.ar{fill:none; stroke:var(--edge); stroke-width:1.3; marker-end:url(#la)}
+.ar.dash{stroke-dasharray:5 4}
+.ar.bad{stroke:var(--bad); marker-end:url(#la-bad)}
+.al{font:10.5px var(--font-mono); fill:var(--muted); paint-order:stroke; stroke:var(--card); stroke-width:4px; stroke-linejoin:round; pointer-events:none}
+#la path{fill:var(--edge)} #la-hi path{fill:var(--accent)} #la-bad path{fill:var(--bad)}
+svg.focus .ar{opacity:.12} svg.focus .al{opacity:.15} svg.focus .bx{opacity:.3}
+svg.focus .ar.hi{opacity:1; stroke:var(--accent); stroke-width:2; marker-end:url(#la-hi)}
+svg.focus .al.hi{opacity:1; fill:var(--fg)}
+svg.focus .bx.hi{opacity:1}
+svg.focus .bx.hi rect{stroke:var(--accent)}
+@media (prefers-reduced-motion:no-preference){ .ar,.al,.bx{transition:opacity .15s ease, stroke .15s ease} }
+
+/* ── detail panel under a diagram ── */
+.detail{margin-top:12px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 16px; min-height:74px; font-size:14px}
+.d-head{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap}
+.d-kind{font:500 11px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--muted); background:var(--chip); border:1px solid var(--line); border-radius:20px; padding:2px 8px}
+.d-kind.pinned{color:var(--accent); border-color:var(--accent)}
+.detail h4{font-size:15px; font-weight:600; margin:0}
+.d-body{margin-top:6px; color:var(--muted)}
+.d-body b{color:var(--fg); font-weight:500}
+
+/* ── mermaid (state machines, sequences) ── */
+.mwrap{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; overflow-x:auto}
+pre.mermaid{background:none; margin:0; text-align:center}
+.mermaid-out svg{display:block; margin:0 auto; max-width:100%; height:auto}
+
+.foot{margin-top:56px; color:var(--muted); font-size:13.5px; max-width:82ch}
+@media (max-width:700px){ h1{font-size:24px} h2{font-size:19px; margin-top:48px} body{font-size:15px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ════ HEADER: eyebrow (where this sits), title, one-paragraph scope, provenance, computed stats ════ -->
+<div class="top">
+  <div>
+    <p class="eyebrow">Rung 04 · Code Reading Map</p>
+    <h1>Grid (M3) — the whole flow, for a debugger</h1>
+  </div>
+  <button class="theme" id="themeBtn" type="button">Theme: auto</button>
+</div>
+<p class="sub">"Where a parcel can go." Every box below is a real class or table; every anchor is <code>File:line</code> as of 2026-10-25 on <code>main</code>. Read a stage, then put the breakpoint where it says.</p>
+<div class="stats" id="stats"></div>
+
+<ul class="toc">
+  <li><a href="#overview">Overview</a></li>
+  <li><a href="#s2">Serviceability</a></li>
+  <li><a href="#lifecycle">Proposal lifecycle</a></li>
+  <li><a href="#drift">Docs vs code</a></li>
+  <li><a href="#gloss">Terms</a></li>
+</ul>
+
+<!-- ════ REALITY CHECK: always first. What the docs / CLAUDE.md / design say that the code contradicts. ════ -->
+<div class="callout warn">
+<strong>Reality check before you read any design doc.</strong>
+<ol>
+  <li><strong>The solver that runs is <code>BalancedBfsAssignmentServiceImpl</code>, not CP-SAT.</strong> The one injection point is <code>GridReplanServiceImpl:59</code>.</li>
+  <li><strong>Adjacency is always the H3 1-ring</strong> (<code>gridDisk(h,1)</code>). The OSRM-based loader is never called.</li>
+  <li><strong>APPROVED rows are the live plan.</strong> There is no apply step; approving flips <code>da_hex_assignment.status</code> in place.</li>
+</ol>
+</div>
+
+<!-- ════ OVERVIEW: one lanes diagram, top-to-bottom in the order things happen ════ -->
+<h2 id="overview">End-to-end overview</h2>
+<p>Lanes run top to bottom in the order things happen in a day. Solid boxes are Java, dashed boxes are tables, the blue box is where to put the first breakpoint. Hover or click a box to trace what it touches.</p>
+<figure>
+  <div class="dwrap" id="lanes"></div>
+  <figcaption>
+    <span class="key"><i></i> class / method</span>
+    <span class="key"><i class="tbl"></i> table</span>
+    <span class="key"><i class="hot"></i> first breakpoint</span>
+    <span class="key"><i class="ghost"></i> exists, never called</span>
+    <span class="key"><i class="bad"></i> broken / see gotchas</span>
+  </figcaption>
+</figure>
+<section class="detail" aria-live="polite">
+  <div class="d-head"><span class="d-kind" id="lKind">At rest</span><h4 id="lName">Point at a box</h4></div>
+  <div class="d-body" id="lBody">Hover previews the trace; click pins it; <code>Esc</code> clears.</div>
+</section>
+
+<!-- ════ ONE SECTION PER STAGE: badge-led intro → call chain → where to look → gotchas ════ -->
+<h2 id="s2">2 · Serviceability: can this parcel go there?</h2>
+<p class="stage"><span class="badge biz">business</span>Every booking asks the grid whether both pickup and drop fall on active hexes, and whether they are in the same city. The answer decides SAME_CITY versus INTERCITY pricing and routing.</p>
+
+<h3><span class="badge code">code</span> Call chain from the booking</h3>
+<!-- Ctrl-click order: entry point first, each row one hop deeper. A method already explained earlier in the
+     page is linked back (see §n), never re-explained. -->
+<div class="tbl"><table>
+  <thead><tr><th>#</th><th>Method</th><th>Anchor</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td class="n">1</td><td><code>BookingServiceImpl</code></td><td class="anchor"><code>ServiceabilityQuery</code> (M4)</td><td>Builds the query from pickup and drop lat/lng and calls the grid port.</td></tr>
+    <tr><td class="n">2</td><td><code>GridServiceabilityAdapter.check(q)</code></td><td class="anchor"><code>adapter:43</code></td><td>Resolves both points (×2) through the grid service.</td></tr>
+    <tr><td class="n">3</td><td><code>GridService.serviceableAt</code></td><td class="anchor"><code>:141</code></td><td><code>latLngToCell</code> → <code>findByH3Index</code>. The indexed read against <code>h3_hex</code>.</td></tr>
+    <tr><td class="n">4</td><td><code>ServiceabilityResult</code></td><td class="anchor">—</td><td>Hexes plus <code>SAME_CITY | INTERCITY</code>, decided by comparing each hex's grid → city.</td></tr>
+  </tbody>
+</table></div>
+
+<h3><span class="badge dbg">debug</span> Where to look</h3>
+<div class="tbl"><table>
+  <thead><tr><th>Symptom</th><th>Breakpoint</th><th>Inspect</th></tr></thead>
+  <tbody>
+    <tr><td>Booking rejected as unserviceable</td><td><code>GridService.serviceableAt</code> <span class="dim">:141</span></td><td>the resolved <code>h3Index</code>; whether the hex row exists and <code>isActive</code></td></tr>
+    <tr><td>Wrong SAME_CITY / INTERCITY</td><td>step 4</td><td>each hex's <code>grid → city</code></td></tr>
+  </tbody>
+</table></div>
+
+<div class="callout bad">
+<strong><span class="badge gotcha">gotchas</span></strong>
+<ul>
+  <li>Every seeded cell is <code>is_active=true</code>; an inactive hex only appears if someone flips it by hand.</li>
+</ul>
+</div>
+
+<!-- ════ STATE MACHINE: mermaid, themed from the page tokens (renderer at the bottom) ════ -->
+<h2 id="lifecycle">Proposal lifecycle</h2>
+<p>Approval flips rows in place; nothing is copied or applied. If nothing is approved by 07:00, yesterday's plan is copied forward.</p>
+<div class="mwrap"><pre class="mermaid">
+stateDiagram-v2
+  direction LR
+  [*] --> PROPOSED: nightly replan 01:00 (persist :355)
+  PROPOSED --> APPROVED: POST /approve (ProposalServiceImpl.approve :91)
+  APPROVED --> SUPERSEDED: newer plan approved, same city + date + shift
+  [*] --> MANUAL: 07:00 applyFallbackIfNeeded copies D-1 APPROVED
+</pre></div>
+
+<!-- ════ DRIFT TABLE: what each source claims vs what the code does, with the anchor that proves it ════ -->
+<h2 id="drift">Docs vs code</h2>
+<div class="tbl"><table>
+  <thead><tr><th>Claim</th><th>Where it's claimed</th><th>What the code does</th><th>Proof</th></tr></thead>
+  <tbody>
+    <tr><td>Solver is CP-SAT</td><td>design doc</td><td><span class="b">BalancedBfs is the only one wired</span></td><td><code>GridReplanServiceImpl:59</code></td></tr>
+    <tr><td>Adjacency from OSRM</td><td>design doc</td><td><span class="w">H3 1-ring; OSRM only gates manual overrides</span></td><td><code>gridDisk(h,1)</code></td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="gloss">Terms</h2>
+<div class="tbl"><table>
+  <thead><tr><th>Term</th><th>What it is</th><th>On this page</th></tr></thead>
+  <tbody>
+    <tr><td><b>H3 hex</b></td><td>A cell of Uber's hexagonal grid; resolution 8 here.</td><td><code>h3_hex</code> rows, one per cell.</td></tr>
+    <tr><td><b>Proposal</b></td><td>The solver's suggested DA-to-hex assignment for a city, date and shift.</td><td>Lane ③ output; §Proposal lifecycle.</td></tr>
+  </tbody>
+</table></div>
+
+<p class="foot">Verified 2026-10-25 against <code>main</code>. Every anchor was opened, not inferred from names.</p>
+</div>
+
+<script>
+/* ═══════════════════════ DATA — the only block you edit ═══════════════════════
+   LANES  [{title, sub, boxes:[{id, t, s?, kind?, in?, link?, note?}]}]
+          t = class/method (title)   s = anchor or one-line detail (mono)
+          kind: 'code' (default) | 'table' | 'hot' (first breakpoint) | 'ghost' (exists, never called) | 'bad'
+          in   = label on the arrow INTO this box from the previous box in the lane
+          link = false → no arrow from the previous box (starts a new chain in the same lane)
+          note = sentence shown in the detail panel
+   LINKS  [{from, to, label?, dash?, bad?}]  arrows between lanes (orthogonal elbow, auto-routed)
+   STATS  [[number, label, 'bad'?]]
+   ══════════════════════════════════════════════════════════════════════════════ */
+var STATS = [[9,'stages'],[3,'solvers in code'],[1,'wired','bad'],[6,'lanes']];
+var LANES = [
+  {title:'① STARTUP · !prod', sub:'GridSeeder (app)', boxes:[
+    {id:'seed', t:'GridSeeder', s:'ApplicationRunner · 5 cities'},
+    {id:'init', t:'GridService.initializeGrid', s:'GridServiceImpl:324', in:'per city'},
+    {id:'poly', t:'polyfillCity → H3 cells', s:'polygonToCells · res 8 · :388', in:'geojson'},
+    {id:'tbls', t:'h3_grid · h3_hex · h3_hex_vertex', s:'every cell is_active=true', kind:'table', in:'saveAll'}
+  ]},
+  {title:'② EVERY BOOKING', sub:'M4 → grid port', boxes:[
+    {id:'book', t:'BookingServiceImpl', s:'ServiceabilityQuery (M4)'},
+    {id:'adp', t:'GridServiceabilityAdapter', s:'check(q) · adapter:43', in:'check(q)'},
+    {id:'svc', t:'GridService.serviceableAt', s:'findByH3Index :141', kind:'hot', in:'resolve ×2', note:'First breakpoint for any serviceability bug: both points resolve here.'},
+    {id:'hex', t:'Hex row', s:'isActive · grid → city', kind:'table', in:'h3Index'},
+    {id:'res', t:'ServiceabilityResult', s:'SAME_CITY | INTERCITY', in:'same city?'}
+  ]},
+  {title:'③ NIGHTLY 01:00 IST', sub:'orchestrate', boxes:[
+    {id:'job', t:'NightlyReplanJob.run', s:'@Scheduled "0 0 1" · :59'},
+    {id:'ros', t:'DaRosterPort', s:'auth DA roster', in:'roster'},
+    {id:'rep', t:'GridReplanServiceImpl.replan', s:':76 · orchestrates', kind:'hot', in:'daIds'}
+  ]},
+  {title:'③ NIGHTLY', sub:'compute', boxes:[
+    {id:'dem', t:'DemandScoringServiceImpl', s:'0.70·hist + 0.30·current', kind:'bad', note:'Reads a table no migration creates, so demand is 0 on every hex.'},
+    {id:'adj', t:'buildGeometricAdjacency', s:'gridDisk(h,1) · :132', in:'② :88'},
+    {id:'bfs', t:'BalancedBfsAssignmentService', s:'flood → boundary swaps', in:'③ :98'},
+    {id:'prop', t:'proposal + da_hex_assignment', s:'status PROPOSED', kind:'table', in:'persist :355'}
+  ]},
+  {title:'④ MORNING', sub:'approve, or fall back', boxes:[
+    {id:'appr', t:'POST /api/proposals/{id}/approve', s:'ProposalServiceImpl.approve :91'},
+    {id:'live', t:'rows → APPROVED', s:'older plan → SUPERSEDED', kind:'table', in:'flip in place'},
+    {id:'esc', t:'06:00 checkEscalation', s:'WARN log only · :76', link:false},
+    {id:'fb', t:'07:00 applyFallbackIfNeeded', s:'copy D−1 as MANUAL · :92', in:'1 h later'}
+  ]},
+  {title:'⑤ CONSUMERS', sub:'of the live plan', boxes:[
+    {id:'m5', t:'M5 dispatch', s:'ShiftLoadJob 05:45'},
+    {id:'m6', t:'M6 routing', s:'GridDataAdapter', link:false},
+    {id:'api', t:'GET /api/grid/{city}/assignments', s:'ops map · demo UI', link:false}
+  ]}
+];
+var LINKS = [
+  {from:'tbls', to:'hex', label:'indexed read'},
+  {from:'rep', to:'dem', label:'① demand :80'},
+  {from:'prop', to:'appr', label:'station manager reviews', dash:true},
+  {from:'live', to:'m5', label:'APPROVED rows for valid_date'},
+  {from:'live', to:'m6'},
+  {from:'live', to:'api'}
+];
+/* ═══════════════════════ RENDERERS — do not edit below this line ═══════════════════════ */
+(function(){
+  'use strict';
+  var NS='http://www.w3.org/2000/svg';
+  function el(n,a,txt){ var e=document.createElementNS(NS,n); for(var k in a) e.setAttribute(k,a[k]); if(txt!=null) e.textContent=txt; return e; }
+  function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  // ── stats ──
+  document.getElementById('stats').innerHTML = STATS.map(function(s){ return '<span class="stat'+(s[2]?' '+s[2]:'')+'"><b>'+s[0]+'</b> '+esc(s[1])+'</span>'; }).join('');
+
+  // ── theme toggle (auto → light → dark); mermaid re-renders on change ──
+  var themeListeners=[];
+  (function(){
+    var order=['auto','light','dark'], btn=document.getElementById('themeBtn'), cur='auto';
+    try{ cur=localStorage.getItem('ad-theme')||'auto'; }catch(e){}
+    function set(t){ cur=t; if(t==='auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme',t);
+      btn.textContent='Theme: '+t; try{ localStorage.setItem('ad-theme',t); }catch(e){} themeListeners.forEach(function(f){f();}); }
+    btn.addEventListener('click',function(){ set(order[(order.indexOf(cur)+1)%3]); }); set(cur);
+    if(window.matchMedia){ var mq=matchMedia('(prefers-color-scheme: dark)'); if(mq.addEventListener) mq.addEventListener('change',function(){ themeListeners.forEach(function(f){f();}); }); }
+  })();
+
+  // ── lanes (drawn after web fonts load, so box widths are measured in the real font) ──
+  var host=document.getElementById('lanes');
+  var fontsReady=(document.fonts&&document.fonts.ready)?document.fonts.ready:Promise.resolve();
+  if(host && window.LANES) fontsReady.then(drawLanes, drawLanes);
+  function drawLanes(){
+    var LX=16, BX0=200, BH=54, LANEH=96, GAPY=46, PAD=14, MINGAP=64, TOP=8;
+    var ctx=document.createElement('canvas').getContext('2d');
+    var uiFont=getComputedStyle(document.body).fontFamily;
+    function tw(s,font){ ctx.font=font; return ctx.measureText(s||'').width; }
+    var pos={}, W=0;
+    LANES.forEach(function(L,li){
+      var y=TOP+li*(LANEH+GAPY), x=BX0;
+      L.y=y;
+      L.boxes.forEach(function(b,bi){
+        var w=Math.max(150, tw(b.t,'600 12.5px '+uiFont)+2*PAD, tw(b.s,'11px "IBM Plex Mono",monospace')+2*PAD);
+        if(bi>0){ var g=b.link===false?36:Math.max(MINGAP, tw(b.in,'10.5px "IBM Plex Mono",monospace')+24); x+=g; }
+        pos[b.id]={x:x, y:y+(LANEH-BH)/2, w:w, h:BH, lane:li, b:b};
+        x+=w;
+      });
+      W=Math.max(W,x+LX);
+    });
+    var H=TOP+LANES.length*(LANEH+GAPY)-GAPY+8;
+    var svg=el('svg',{viewBox:'0 0 '+Math.ceil(W)+' '+H, class:'lanes', role:'img', 'aria-label':'Lanes diagram: '+LANES.map(function(L){return L.title;}).join('; ')});
+    svg.style.minWidth=Math.min(Math.ceil(W),1100)+'px';
+    var defs=el('defs');
+    ['la','la-hi','la-bad'].forEach(function(id){ var m=el('marker',{id:id, viewBox:'0 0 10 10', refX:'9', refY:'5', markerWidth:'7', markerHeight:'7', orient:'auto-start-reverse'}); m.appendChild(el('path',{d:'M0,0 L10,5 L0,10 z'})); defs.appendChild(m); });
+    svg.appendChild(defs);
+    LANES.forEach(function(L,li){
+      if(li%2===0) svg.appendChild(el('rect',{class:'lanebg', x:4, y:L.y, width:Math.ceil(W)-8, height:LANEH, rx:10}));
+      svg.appendChild(el('text',{class:'lt', x:LX, y:L.y+LANEH/2-4}, L.title));
+      if(L.sub) svg.appendChild(el('text',{class:'ls', x:LX, y:L.y+LANEH/2+12}, L.sub));
+    });
+    var gA=el('g'), gL=el('g'), gB=el('g'); svg.appendChild(gA); svg.appendChild(gL); svg.appendChild(gB);
+    var arrows=[];
+    function arrow(d,from,to,label,lx,ly,cls){
+      var p=el('path',{d:d, class:'ar'+(cls?' '+cls:'')}); gA.appendChild(p);
+      var t=null; if(label){ t=el('text',{class:'al', x:lx, y:ly, 'text-anchor':'middle'}, label); gL.appendChild(t); }
+      arrows.push({el:p, label:t, from:from, to:to});
+    }
+    // in-lane arrows
+    LANES.forEach(function(L){
+      L.boxes.forEach(function(b,bi){
+        if(bi===0 || b.link===false) return;
+        var a=pos[L.boxes[bi-1].id], c=pos[b.id], y=a.y+BH/2;
+        arrow('M'+(a.x+a.w)+','+y+' L'+c.x+','+y, L.boxes[bi-1].id, b.id, b.in, (a.x+a.w+c.x)/2, y-7);
+      });
+    });
+    // cross-lane elbows: leave from bottom/top centre, run horizontally in the gap between lanes
+    LINKS.forEach(function(k){
+      var a=pos[k.from], c=pos[k.to]; if(!a||!c){ console.error('LINK references unknown box',k); return; }
+      var down=c.lane>a.lane, x1=a.x+a.w/2, x2=c.x+c.w/2;
+      var y1=down?a.y+BH:a.y, y2=down?c.y:c.y+BH;
+      var L=LANES[down?a.lane:c.lane], mid=L.y+LANEH+GAPY/2;
+      var d=Math.abs(x1-x2)<1 ? 'M'+x1+','+y1+' V'+y2 : 'M'+x1+','+y1+' V'+mid+' H'+x2+' V'+y2;
+      arrow(d, k.from, k.to, k.label, (x1+x2)/2, mid-6, (k.dash?'dash':'')+(k.bad?' bad':''));
+    });
+    // boxes on top
+    var boxes={};
+    Object.keys(pos).forEach(function(id){
+      var p=pos[id], b=p.b, g=el('g',{class:'bx '+(b.kind||'code'), tabindex:'0', role:'button', 'data-id':id, 'aria-label':b.t+(b.s?' — '+b.s:'')});
+      g.appendChild(el('title',{},b.t+(b.s?' · '+b.s:'')));
+      g.appendChild(el('rect',{x:p.x, y:p.y, width:p.w, height:BH, rx:7}));
+      g.appendChild(el('text',{class:'t', x:p.x+p.w/2, y:p.y+(b.s?23:31), 'text-anchor':'middle'}, b.t));
+      if(b.s) g.appendChild(el('text',{class:'s', x:p.x+p.w/2, y:p.y+40, 'text-anchor':'middle'}, b.s));
+      gB.appendChild(g); boxes[id]=g;
+    });
+    host.appendChild(svg);
+
+    // trace highlight + detail panel
+    var pinned=null, lKind=document.getElementById('lKind'), lName=document.getElementById('lName'), lBody=document.getElementById('lBody');
+    var KIND={code:'class / method', table:'table', hot:'first breakpoint', ghost:'never called', bad:'broken'};
+    function apply(id){
+      svg.classList.toggle('focus',!!id);
+      arrows.forEach(function(a){ var on=!!id&&(a.from===id||a.to===id); a.el.classList.toggle('hi',on); if(a.label) a.label.classList.toggle('hi',on); });
+      for(var k in boxes) boxes[k].classList.remove('hi');
+      if(!id){ lKind.textContent='At rest'; lName.textContent='Point at a box'; lBody.innerHTML='Hover previews the trace; click pins it; <code>Esc</code> clears.'; return; }
+      boxes[id].classList.add('hi');
+      var ins=[], outs=[];
+      arrows.forEach(function(a){ if(a.to===id){ boxes[a.from].classList.add('hi'); ins.push(a); } if(a.from===id){ boxes[a.to].classList.add('hi'); outs.push(a); } });
+      var b=pos[id].b;
+      lKind.textContent=(pinned?'Pinned · ':'')+(KIND[b.kind||'code']);
+      lName.textContent=b.t;
+      var lab=function(a,other){ return '<b>'+esc(pos[other].b.t)+'</b>'+(a.label&&a.label.textContent?' <span class="dim">('+esc(a.label.textContent)+')</span>':''); };
+      lBody.innerHTML=(b.s?'<code>'+esc(b.s)+'</code> · ':'')
+        +'Lane '+esc(LANES[pos[id].lane].title)
+        +(ins.length?'<br>from: '+ins.map(function(a){return lab(a,a.from);}).join(', '):'')
+        +(outs.length?'<br>to: '+outs.map(function(a){return lab(a,a.to);}).join(', '):'')
+        +(b.note?'<br>'+esc(b.note):'');
+    }
+    function pin(id){ pinned=id; lKind.classList.toggle('pinned',!!id); apply(id); }
+    gB.addEventListener('mouseover',function(e){ var g=e.target.closest('.bx'); if(g&&!pinned) apply(g.getAttribute('data-id')); });
+    gB.addEventListener('mouseout',function(e){ if(e.target.closest('.bx')&&!pinned) apply(null); });
+    gB.addEventListener('focusin',function(e){ var g=e.target.closest('.bx'); if(g&&!pinned) apply(g.getAttribute('data-id')); });
+    gB.addEventListener('focusout',function(){ if(!pinned) apply(null); });
+    gB.addEventListener('click',function(e){ var g=e.target.closest('.bx'); if(!g) return; e.stopPropagation(); var id=g.getAttribute('data-id'); pin(pinned===id?null:id); });
+    gB.addEventListener('keydown',function(e){ var g=e.target.closest('.bx'); if(g&&(e.key==='Enter'||e.key===' ')){ e.preventDefault(); var id=g.getAttribute('data-id'); pin(pinned===id?null:id); } });
+    svg.addEventListener('click',function(){ if(pinned) pin(null); });
+    document.addEventListener('keydown',function(e){ if(e.key==='Escape'&&pinned) pin(null); });
+  }
+
+  // ── mermaid, themed from the page tokens; falls back to the raw source if the CDN is unreachable ──
+  var pres=[].slice.call(document.querySelectorAll('pre.mermaid'));
+  if(pres.length){
+    var srcs=pres.map(function(p){ return p.textContent; });
+    var s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js';
+    s.onload=function(){
+      var gen=0;
+      function render(){
+        var cs=getComputedStyle(document.documentElement), v=function(n){ return cs.getPropertyValue(n).trim(); };
+        var dark=cs.colorScheme.indexOf('dark')>=0, my=++gen;
+        mermaid.initialize({startOnLoad:false, securityLevel:'strict', theme:'base',
+          themeVariables:{darkMode:dark, background:v('--card'), mainBkg:v('--card'), primaryColor:v('--card'), primaryTextColor:v('--fg'),
+            primaryBorderColor:v('--edge'), lineColor:v('--edge'), textColor:v('--fg'), edgeLabelBackground:v('--card'),
+            nodeBorder:v('--edge'), clusterBkg:v('--lane'), titleColor:v('--fg'), fontFamily:getComputedStyle(document.body).fontFamily, fontSize:'14px'}});
+        pres.forEach(function(p,i){
+          var out=p.nextElementSibling&&p.nextElementSibling.classList.contains('mermaid-out')?p.nextElementSibling:null;
+          if(!out){ out=document.createElement('div'); out.className='mermaid-out'; p.parentNode.insertBefore(out,p.nextSibling); }
+          mermaid.render('mmd-'+i+'-'+my, srcs[i]).then(function(r){ if(my!==gen) return; out.innerHTML=r.svg; p.style.display='none'; })
+            .catch(function(err){ console.error('mermaid',err); p.style.display=''; });
+        });
+      }
+      render(); themeListeners.push(render);
+    };
+    s.onerror=function(){ console.warn('mermaid CDN unreachable; showing source'); };
+    document.head.appendChild(s);
+  }
+})();
+</script>
+</body>
+</html>
+````
